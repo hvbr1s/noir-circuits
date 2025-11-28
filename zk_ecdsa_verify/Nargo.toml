@@ -1,0 +1,8 @@
+[package]
+name = "zk_ecdsa_verify"
+type = "bin"
+authors = ["DanJ"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
+keccak256 = { tag = "v0.1.1", git = "https://github.com/noir-lang/keccak256" }
