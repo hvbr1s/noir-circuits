@@ -19,10 +19,9 @@ The verifier learns nothing except "this person owns an address in the allowlist
 
 ### Privacy Model
 
-This uses a **true zero-knowledge proof** (`UltraZKHonkBackend` + `BaseZKHonkVerifier`):
+This uses `UltraHonkBackend` + `BaseHonkVerifier`:
 
 - Your address is a **private circuit input** (never included in the proof)
-- The proof hides the witness structure (full ZK property)
 - The verifier only sees: proof bytes + merkle root
 
 ## Quick Start
@@ -78,7 +77,7 @@ Proves: "I know an address that hashes to a leaf in this merkle tree"
 
 | Network | Address |
 |---------|---------|
-| Sepolia | `0x1F40DD7A796466389B60ab8077E8A520229c3771` |
+| Sepolia | [`0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583`](https://sepolia.blockscout.com/address/0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583) |
 
 ## Updating the Allowlist
 
