@@ -1,11 +1,25 @@
-fn main(x: u64, y: pub u64) {
-    assert(x != y);
+use dep::poseidon::poseidon;
+
+global TREE_DEPTH: u32 = 21; // 2,097,152 leaves
+
+
+#[export]
+fn main(address: Field, siblings: [Field; TREE_DEPTH], indices: [Field; TREE_DEPTH], root: pub Field) {
+    let computed_root = compute_merkle_root(address, siblings, indices);
+    assert(computed_root == root);
 }
 
-#[test]
-fn test_main() {
-    main(1, 2);
+fn compute_merkle_root(leaf: Field, siblings: [Field; TREE_DEPTH], indices: [Field; TREE_DEPTH]) -> Field {
+    let mut current: Field = leaf;
 
-    // Uncomment to make test fail
-    // main(1, 1);
+    for i in 0..TREE_DEPTH {
+        let sibling = siblings[i];
+        let (left, right) = if indices[i] == 0 {
+            (current, sibling)
+        } else {
+            (sibling, current)
+        };
+        current = poseidon::bn254::hash_2([left, right]);
+    }
+    current
 }
