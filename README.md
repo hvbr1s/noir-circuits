@@ -17,6 +17,14 @@ Prover                                    Verifier
 
 The verifier learns nothing except "this person owns an address in the allowlist".
 
+### Privacy Model
+
+This uses a **true zero-knowledge proof** (`UltraZKHonkBackend` + `BaseZKHonkVerifier`):
+
+- Your address is a **private circuit input** (never included in the proof)
+- The proof hides the witness structure (full ZK property)
+- The verifier only sees: proof bytes + merkle root
+
 ## Quick Start
 
 ```bash
@@ -41,7 +49,7 @@ client_checker/              # Noir circuit
 ├── src/main.nr              # Merkle membership proof (depth 21)
 └── target/
     ├── checker.json         # Compiled circuit
-    └── Verifier.sol         # Solidity verifier
+    └── Verifier.sol         # Solidity verifier (BaseZKHonkVerifier)
 
 client_checker_merkle/       # Backend + Frontend
 ├── addresses.csv            # Allowlist (one address per line)
@@ -70,7 +78,7 @@ Proves: "I know an address that hashes to a leaf in this merkle tree"
 
 | Network | Address |
 |---------|---------|
-| Sepolia | `0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583` |
+| Sepolia | `0x1F40DD7A796466389B60ab8077E8A520229c3771` |
 
 ## Updating the Allowlist
 

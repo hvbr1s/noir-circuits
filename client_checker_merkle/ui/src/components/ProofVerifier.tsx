@@ -59,7 +59,7 @@ export function ProofVerifier() {
   const statusConfig: Record<Status, { text: string; color: string }> = {
     idle: { text: '', color: '#666' },
     verifying: { text: 'Verifying...', color: '#888' },
-    verified: { text: 'Valid proof', color: '#22c55e' },
+    verified: { text: 'Valid', color: '#22c55e' },
     invalid: { text: 'Invalid proof', color: '#ef4444' },
     error: { text: 'Error', color: '#ef4444' }
   }
@@ -123,7 +123,7 @@ export function ProofVerifier() {
           </span>
           {status === 'verified' && (
             <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '13px' }}>
-              The prover is a member of the allowlist
+              Prover is a member of the allowlist
             </p>
           )}
           {error && (

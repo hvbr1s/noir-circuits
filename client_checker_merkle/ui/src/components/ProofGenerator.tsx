@@ -40,7 +40,7 @@ export function ProofGenerator() {
       }
       const merkleProof: MerkleProof = await res.json()
 
-      // Generate ZK proof
+      // Generate proof
       setStatus('proving')
 
       const [{ Noir }, { UltraHonkBackend }] = await Promise.all([
@@ -94,7 +94,7 @@ export function ProofGenerator() {
   const statusText: Record<Status, string> = {
     idle: 'Generate Proof',
     fetching: 'Fetching merkle proof...',
-    proving: 'Generating ZK proof...',
+    proving: 'Generating proof...',
     done: 'Generate Proof',
     error: 'Generate Proof'
   }
