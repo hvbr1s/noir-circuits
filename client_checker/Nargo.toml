@@ -1,0 +1,6 @@
+[package]
+name = "client_checker"
+type = "bin"
+authors = [""]
+
+[dependencies]

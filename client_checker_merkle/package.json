@@ -1,0 +1,21 @@
+{
+  "name": "client_checker_merkle",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build_tree": "tsx ./src/build_tree.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/circomlibjs": "^0.1.6",
+    "@types/node": "^24.10.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "circomlibjs": "^0.1.7"
+  }
+}
