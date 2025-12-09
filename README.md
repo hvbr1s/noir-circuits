@@ -44,11 +44,11 @@ npm run dev
 ## Project Structure
 
 ```
-client_checker/              # Noir circuit
+verifier_contract_factory/   # Noir circuit
 ├── src/main.nr              # Merkle membership proof (depth 21)
 └── target/
     ├── checker.json         # Compiled circuit
-    └── Verifier.sol         # Solidity verifier (BaseZKHonkVerifier)
+    └── Verifier.sol         # Solidity verifier (BaseHonkVerifier)
 
 client_checker_merkle/       # Backend + Frontend
 ├── addresses.csv            # Allowlist (one address per line)
