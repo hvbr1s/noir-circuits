@@ -1,6 +1,12 @@
+import { useState } from 'react'
 import { ProofGenerator } from './components/ProofGenerator'
+import { ProofVerifier } from './components/ProofVerifier'
+
+type Tab = 'prove' | 'verify'
 
 function App() {
+  const [tab, setTab] = useState<Tab>('prove')
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -10,7 +16,7 @@ function App() {
       justifyContent: 'center',
       padding: '40px 20px'
     }}>
-      <div style={{ maxWidth: '480px', width: '100%' }}>
+      <div style={{ maxWidth: '520px', width: '100%' }}>
         <h1 style={{
           fontSize: '28px',
           fontWeight: 600,
@@ -22,13 +28,54 @@ function App() {
         <p style={{
           color: '#666',
           marginTop: 0,
-          marginBottom: '32px',
+          marginBottom: '24px',
           fontSize: '15px'
         }}>
-          Prove your address is in the allowlist without revealing which one
+          Prove membership without revealing your address
         </p>
 
-        <ProofGenerator />
+        <div style={{
+          display: 'flex',
+          gap: '8px',
+          marginBottom: '20px'
+        }}>
+          <button
+            onClick={() => setTab('prove')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: tab === 'prove' ? '#fff' : '#111',
+              color: tab === 'prove' ? '#000' : '#666',
+              border: '1px solid #333',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 500,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            Generate Proof
+          </button>
+          <button
+            onClick={() => setTab('verify')}
+            style={{
+              flex: 1,
+              padding: '10px',
+              background: tab === 'verify' ? '#fff' : '#111',
+              color: tab === 'verify' ? '#000' : '#666',
+              border: '1px solid #333',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: 500,
+              transition: 'all 0.15s ease'
+            }}
+          >
+            Verify Proof
+          </button>
+        </div>
+
+        {tab === 'prove' ? <ProofGenerator /> : <ProofVerifier />}
       </div>
     </div>
   )

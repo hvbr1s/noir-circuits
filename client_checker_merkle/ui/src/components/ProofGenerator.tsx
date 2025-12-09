@@ -1,6 +1,4 @@
 import { useState } from 'react'
-import { usePublicClient } from 'wagmi'
-import { VERIFIER_ADDRESS, VERIFIER_ABI } from '../config/verifier'
 
 const API_URL = 'http://localhost:3001'
 
@@ -12,14 +10,14 @@ interface MerkleProof {
   index: number
 }
 
-type Status = 'idle' | 'fetching' | 'proving' | 'verifying' | 'verified' | 'invalid' | 'error'
+type Status = 'idle' | 'fetching' | 'proving' | 'done' | 'error'
 
 export function ProofGenerator() {
   const [address, setAddress] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
-
-  const publicClient = usePublicClient()
+  const [proofHex, setProofHex] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   const handleProve = async () => {
     const inputAddress = address.trim()
@@ -30,6 +28,7 @@ export function ProofGenerator() {
     }
 
     setError(null)
+    setProofHex(null)
     setStatus('fetching')
 
     try {
@@ -74,43 +73,37 @@ export function ProofGenerator() {
       const proofBytes = proofData.proof
       const proofHexStr = '0x' + Array.from(proofBytes).map(b => b.toString(16).padStart(2, '0')).join('')
 
-      // Verify on-chain
-      setStatus('verifying')
-
-      if (!publicClient) {
-        throw new Error('No RPC client available')
-      }
-
-      const rootBytes32 = padHex(merkleProof.root) as `0x${string}`
-
-      const isValid = await publicClient.readContract({
-        address: VERIFIER_ADDRESS,
-        abi: VERIFIER_ABI,
-        functionName: 'verify',
-        args: [proofHexStr as `0x${string}`, [rootBytes32]]
-      })
-
-      setStatus(isValid ? 'verified' : 'invalid')
+      setProofHex(proofHexStr)
+      setStatus('done')
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'Unknown error')
     }
   }
 
-  const isLoading = status === 'fetching' || status === 'proving' || status === 'verifying'
+  const copyToClipboard = async () => {
+    if (proofHex) {
+      await navigator.clipboard.writeText(proofHex)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
 
-  const statusConfig: Record<Status, { text: string; color: string }> = {
-    idle: { text: '', color: '#666' },
-    fetching: { text: 'Fetching merkle proof...', color: '#888' },
-    proving: { text: 'Generating ZK proof...', color: '#888' },
-    verifying: { text: 'Verifying on-chain...', color: '#888' },
-    verified: { text: 'Verified', color: '#22c55e' },
-    invalid: { text: 'Invalid proof', color: '#ef4444' },
-    error: { text: 'Error', color: '#ef4444' }
+  const isLoading = status === 'fetching' || status === 'proving'
+
+  const statusText: Record<Status, string> = {
+    idle: 'Generate Proof',
+    fetching: 'Fetching merkle proof...',
+    proving: 'Generating ZK proof...',
+    done: 'Generate Proof',
+    error: 'Generate Proof'
   }
 
   return (
     <div>
+      <label style={{ display: 'block', marginBottom: '6px', color: '#888', fontSize: '13px' }}>
+        Your address (private)
+      </label>
       <input
         type="text"
         placeholder="0x..."
@@ -148,25 +141,75 @@ export function ProofGenerator() {
           transition: 'all 0.15s ease'
         }}
       >
-        {isLoading ? statusConfig[status].text : 'Prove'}
+        {statusText[status]}
       </button>
 
-      {(status === 'verified' || status === 'invalid' || status === 'error') && (
+      {status === 'error' && error && (
         <div style={{
           marginTop: '16px',
           padding: '14px 16px',
           background: '#111',
           borderRadius: '8px',
-          borderLeft: `3px solid ${statusConfig[status].color}`
+          borderLeft: '3px solid #ef4444'
         }}>
-          <span style={{ color: statusConfig[status].color, fontWeight: 500 }}>
-            {statusConfig[status].text}
-          </span>
-          {error && (
-            <p style={{ margin: '8px 0 0 0', color: '#888', fontSize: '13px' }}>
-              {error}
+          <span style={{ color: '#ef4444', fontWeight: 500 }}>Error</span>
+          <p style={{ margin: '8px 0 0 0', color: '#888', fontSize: '13px' }}>{error}</p>
+        </div>
+      )}
+
+      {proofHex && (
+        <div style={{ marginTop: '20px' }}>
+          <div style={{
+            padding: '14px 16px',
+            background: '#111',
+            borderRadius: '8px',
+            borderLeft: '3px solid #22c55e',
+            marginBottom: '12px'
+          }}>
+            <span style={{ color: '#22c55e', fontWeight: 500 }}>Proof generated</span>
+            <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '13px' }}>
+              Share this with the verifier
             </p>
-          )}
+          </div>
+
+          <div style={{ position: 'relative' }}>
+            <textarea
+              readOnly
+              value={proofHex}
+              style={{
+                width: '100%',
+                height: '100px',
+                padding: '12px',
+                paddingRight: '70px',
+                background: '#111',
+                border: '1px solid #333',
+                borderRadius: '8px',
+                color: '#fff',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                outline: 'none',
+                boxSizing: 'border-box',
+                resize: 'none'
+              }}
+            />
+            <button
+              onClick={copyToClipboard}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '8px',
+                padding: '6px 12px',
+                background: '#222',
+                color: copied ? '#22c55e' : '#888',
+                border: '1px solid #333',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '12px'
+              }}
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
         </div>
       )}
     </div>
