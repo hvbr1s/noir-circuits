@@ -28,9 +28,8 @@ class MerkleTreeWithProofs {
   private filledSubtrees: bigint[] = [];
   private root: bigint = 0n;
   private nextIndex: number = 0;
-  private leaves: Map<number, bigint> = new Map();
-  private proofsByAddress: Map<string, ProofData> = new Map();
   private nodesByLevel: Map<number, bigint>[] = [];
+  private addressToIndex: Map<string, number> = new Map(); // address -> leaf index (lightweight lookup)
   private statePath: string = '';
 
   async init(statePath: string) {
@@ -56,7 +55,9 @@ class MerkleTreeWithProofs {
     for (const [index, leafHex] of state.leaves) {
       const leaf = BigInt(leafHex);
       this.nodesByLevel[0].set(index, leaf);
-      this.leaves.set(index, leaf);
+      // Build address -> index lookup (lightweight: just stores index, not full proof)
+      const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
+      this.addressToIndex.set(addressHex.toLowerCase(), index);
     }
 
     // Build levels 1 to TREE_DEPTH
@@ -91,49 +92,43 @@ class MerkleTreeWithProofs {
     }
 
     console.log(`Tree built in ${Date.now() - startTime}ms`);
-
-    // Pre-compute proofs for all addresses
-    console.log('Pre-computing proofs...');
-    const proofStart = Date.now();
-
-    for (const [leafIndex, leafHex] of state.leaves) {
-      const siblings: bigint[] = [];
-      const indices: number[] = [];
-      let currentIndex = leafIndex;
-
-      for (let level = 0; level < TREE_DEPTH; level++) {
-        const isRight = currentIndex % 2;
-        const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
-
-        // Get sibling from precomputed nodes, or use zero hash
-        const sibling = this.nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
-        siblings.push(sibling);
-        indices.push(isRight ? 1 : 0);
-
-        currentIndex = Math.floor(currentIndex / 2);
-      }
-
-      // Store proof keyed by address (lowercase hex)
-      const addressHex = '0x' + BigInt(leafHex).toString(16).padStart(40, '0');
-      this.proofsByAddress.set(addressHex.toLowerCase(), {
-        siblings: siblings.map(s => '0x' + s.toString(16)),
-        indices,
-        root: '0x' + this.root.toString(16),
-        leaf: leafHex,
-        index: leafIndex
-      });
-    }
-
-    console.log(`Proofs computed in ${Date.now() - proofStart}ms`);
-    console.log(`Ready! ${this.proofsByAddress.size} addresses indexed.`);
+    console.log(`Ready! ${this.addressToIndex.size} addresses indexed. Proofs computed on-demand.`);
   }
 
   hash(left: bigint, right: bigint): bigint {
     return this.poseidon.F.toObject(this.poseidon([left, right]));
   }
 
+  // Compute proof on-demand (avoids storing 1.4M proofs in memory)
   getProof(address: string): ProofData | null {
-    return this.proofsByAddress.get(address.toLowerCase()) ?? null;
+    const leafIndex = this.addressToIndex.get(address.toLowerCase());
+    if (leafIndex === undefined) {
+      return null;
+    }
+
+    const leaf = this.nodesByLevel[0]!.get(leafIndex)!;
+    const siblings: bigint[] = [];
+    const indices: number[] = [];
+    let currentIndex = leafIndex;
+
+    for (let level = 0; level < TREE_DEPTH; level++) {
+      const isRight = currentIndex % 2;
+      const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
+
+      const sibling = this.nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
+      siblings.push(sibling);
+      indices.push(isRight ? 1 : 0);
+
+      currentIndex = Math.floor(currentIndex / 2);
+    }
+
+    return {
+      siblings: siblings.map(s => '0x' + s.toString(16)),
+      indices,
+      root: '0x' + this.root.toString(16),
+      leaf: '0x' + leaf.toString(16),
+      index: leafIndex
+    };
   }
 
   getRoot(): string {
@@ -154,8 +149,9 @@ class MerkleTreeWithProofs {
     }
 
     // Store the leaf
-    this.leaves.set(index, leaf);
     this.nodesByLevel[0]!.set(index, leaf);
+    const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
+    this.addressToIndex.set(addressHex.toLowerCase(), index);
 
     // Update path to root
     let currentHash = leaf;
@@ -184,9 +180,6 @@ class MerkleTreeWithProofs {
     this.root = currentHash;
     this.nextIndex++;
 
-    // Generate and store proof for the new address
-    this.regenerateProofForLeaf(index, leaf);
-
     return index;
   }
 
@@ -198,9 +191,6 @@ class MerkleTreeWithProofs {
       this.insertAddress(address);
     }
 
-    // Regenerate proofs for all existing addresses (their siblings may have changed)
-    this.regenerateAllProofs();
-
     // Save updated state
     this.saveState();
 
@@ -210,53 +200,20 @@ class MerkleTreeWithProofs {
     };
   }
 
-  // Regenerate proof for a single leaf
-  private regenerateProofForLeaf(leafIndex: number, leaf: bigint) {
-    const siblings: bigint[] = [];
-    const indices: number[] = [];
-    let currentIndex = leafIndex;
-
-    for (let level = 0; level < TREE_DEPTH; level++) {
-      const isRight = currentIndex % 2;
-      const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
-
-      const sibling = this.nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
-      siblings.push(sibling);
-      indices.push(isRight ? 1 : 0);
-
-      currentIndex = Math.floor(currentIndex / 2);
-    }
-
-    const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
-    this.proofsByAddress.set(addressHex.toLowerCase(), {
-      siblings: siblings.map(s => '0x' + s.toString(16)),
-      indices,
-      root: '0x' + this.root.toString(16),
-      leaf: '0x' + leaf.toString(16),
-      index: leafIndex
-    });
-  }
-
-  // Regenerate all proofs (needed after insertions change sibling nodes)
-  private regenerateAllProofs() {
-    console.log('Regenerating all proofs...');
-    const startTime = Date.now();
-
-    for (const [leafIndex, leaf] of this.leaves) {
-      this.regenerateProofForLeaf(leafIndex, leaf);
-    }
-
-    console.log(`Regenerated ${this.leaves.size} proofs in ${Date.now() - startTime}ms`);
-  }
-
   // Save tree state to file
   private saveState() {
+    // Build leaves array from nodesByLevel[0]
+    const leaves: [number, string][] = [];
+    for (const [index, leaf] of this.nodesByLevel[0]!) {
+      leaves.push([index, '0x' + leaf.toString(16)]);
+    }
+
     const state: TreeState = {
       root: '0x' + this.root.toString(16),
       nextIndex: this.nextIndex,
       zeroHashes: this.zeroHashes.map(h => '0x' + h.toString(16)),
       filledSubtrees: this.filledSubtrees.map(h => '0x' + h.toString(16)),
-      leaves: Array.from(this.leaves.entries()).map(([i, l]) => [i, '0x' + l.toString(16)])
+      leaves
     };
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2));
     console.log(`Saved tree state to ${this.statePath}`);
@@ -264,7 +221,7 @@ class MerkleTreeWithProofs {
 
   // Check if address exists in tree
   hasAddress(address: string): boolean {
-    return this.proofsByAddress.has(address.toLowerCase());
+    return this.addressToIndex.has(address.toLowerCase());
   }
 }
 
