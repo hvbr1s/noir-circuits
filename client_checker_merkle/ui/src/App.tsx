@@ -23,7 +23,7 @@ function App() {
           marginBottom: '8px',
           letterSpacing: '-0.5px'
         }}>
-          Merkle Membership
+          ZK Merkle Membership
         </h1>
         <p style={{
           color: '#666',
@@ -54,7 +54,7 @@ function App() {
               transition: 'all 0.15s ease'
             }}
           >
-            Generate Proof
+            Generate ZK Proof
           </button>
           <button
             onClick={() => setTab('verify')}
@@ -71,7 +71,7 @@ function App() {
               transition: 'all 0.15s ease'
             }}
           >
-            Verify Proof
+            Verify ZK Proof
           </button>
         </div>
 
