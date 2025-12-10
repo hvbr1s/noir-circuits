@@ -219,7 +219,7 @@ async function main() {
   await tree.init();
 
   console.log('Loading addresses from CSV...');
-  await tree.loadFromCSV('./addresses.csv');
+  await tree.loadFromCSV('./data/addresses.csv');
 
   console.log(`\nTree built with ${tree.getLeafCount().toLocaleString()} leaves`);
   console.log('Root:', `0x${tree.getRoot().toString(16)}`);

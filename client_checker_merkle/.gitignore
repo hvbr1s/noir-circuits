@@ -1,3 +1,4 @@
-addresses.csv
+data/addresses.csv
 node_modules
 tree_state.json
+.env

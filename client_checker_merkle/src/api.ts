@@ -1,9 +1,10 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import * as fs from 'fs';
 import { buildPoseidonOpt } from 'circomlibjs';
 
 const TREE_DEPTH = 21;
+const OWNER_API_KEY = process.env.OWNER_API_KEY || 'change-me-in-production';
 
 interface TreeState {
   root: string;
@@ -24,10 +25,16 @@ interface ProofData {
 class MerkleTreeWithProofs {
   private poseidon: any;
   private zeroHashes: bigint[] = [];
+  private filledSubtrees: bigint[] = [];
   private root: bigint = 0n;
+  private nextIndex: number = 0;
+  private leaves: Map<number, bigint> = new Map();
   private proofsByAddress: Map<string, ProofData> = new Map();
+  private nodesByLevel: Map<number, bigint>[] = [];
+  private statePath: string = '';
 
   async init(statePath: string) {
+    this.statePath = statePath;
     console.log('Initializing Poseidon...');
     this.poseidon = await buildPoseidonOpt();
 
@@ -36,22 +43,26 @@ class MerkleTreeWithProofs {
 
     this.root = BigInt(state.root);
     this.zeroHashes = state.zeroHashes.map(h => BigInt(h));
+    this.filledSubtrees = state.filledSubtrees.map(h => BigInt(h));
+    this.nextIndex = state.nextIndex;
 
     // Build all nodes level by level (bottom-up)
     console.log(`Building tree with ${state.leaves.length} leaves...`);
     const startTime = Date.now();
 
     // Level 0: leaves
-    const nodesByLevel: Map<number, bigint>[] = [];
-    nodesByLevel[0] = new Map();
+    this.nodesByLevel = [];
+    this.nodesByLevel[0] = new Map();
     for (const [index, leafHex] of state.leaves) {
-      nodesByLevel[0].set(index, BigInt(leafHex));
+      const leaf = BigInt(leafHex);
+      this.nodesByLevel[0].set(index, leaf);
+      this.leaves.set(index, leaf);
     }
 
     // Build levels 1 to TREE_DEPTH
     for (let level = 1; level <= TREE_DEPTH; level++) {
-      nodesByLevel[level] = new Map();
-      const prevLevel = nodesByLevel[level - 1]!;
+      this.nodesByLevel[level] = new Map();
+      const prevLevel = this.nodesByLevel[level - 1]!;
 
       // Find all parent indices that have at least one non-zero child
       const parentIndices = new Set<number>();
@@ -75,7 +86,7 @@ class MerkleTreeWithProofs {
         } else {
           nodeValue = this.hash(left, right);
         }
-        nodesByLevel[level]!.set(parentIndex, nodeValue);
+        this.nodesByLevel[level]!.set(parentIndex, nodeValue);
       }
     }
 
@@ -95,7 +106,7 @@ class MerkleTreeWithProofs {
         const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
 
         // Get sibling from precomputed nodes, or use zero hash
-        const sibling = nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
+        const sibling = this.nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
         siblings.push(sibling);
         indices.push(isRight ? 1 : 0);
 
@@ -128,6 +139,133 @@ class MerkleTreeWithProofs {
   getRoot(): string {
     return '0x' + this.root.toString(16);
   }
+
+  getLeafCount(): number {
+    return this.nextIndex;
+  }
+
+  // Insert a single address and update the tree
+  insertAddress(address: string): number {
+    const leaf = BigInt(address.toLowerCase());
+    const index = this.nextIndex;
+
+    if (index >= 2 ** TREE_DEPTH) {
+      throw new Error('Tree is full');
+    }
+
+    // Store the leaf
+    this.leaves.set(index, leaf);
+    this.nodesByLevel[0]!.set(index, leaf);
+
+    // Update path to root
+    let currentHash = leaf;
+    let currentIndex = index;
+
+    for (let level = 0; level < TREE_DEPTH; level++) {
+      const isRight = currentIndex % 2;
+
+      if (isRight) {
+        currentHash = this.hash(this.filledSubtrees[level]!, currentHash);
+      } else {
+        this.filledSubtrees[level] = currentHash;
+        currentHash = this.hash(currentHash, this.zeroHashes[level]!);
+      }
+
+      // Update nodesByLevel for this level+1
+      const parentIndex = Math.floor(currentIndex / 2);
+      if (!this.nodesByLevel[level + 1]) {
+        this.nodesByLevel[level + 1] = new Map();
+      }
+      this.nodesByLevel[level + 1]!.set(parentIndex, currentHash);
+
+      currentIndex = parentIndex;
+    }
+
+    this.root = currentHash;
+    this.nextIndex++;
+
+    // Generate and store proof for the new address
+    this.regenerateProofForLeaf(index, leaf);
+
+    return index;
+  }
+
+  // Insert multiple addresses
+  insertAddresses(addresses: string[]): { inserted: number; newRoot: string } {
+    const startCount = this.nextIndex;
+
+    for (const address of addresses) {
+      this.insertAddress(address);
+    }
+
+    // Regenerate proofs for all existing addresses (their siblings may have changed)
+    this.regenerateAllProofs();
+
+    // Save updated state
+    this.saveState();
+
+    return {
+      inserted: this.nextIndex - startCount,
+      newRoot: this.getRoot()
+    };
+  }
+
+  // Regenerate proof for a single leaf
+  private regenerateProofForLeaf(leafIndex: number, leaf: bigint) {
+    const siblings: bigint[] = [];
+    const indices: number[] = [];
+    let currentIndex = leafIndex;
+
+    for (let level = 0; level < TREE_DEPTH; level++) {
+      const isRight = currentIndex % 2;
+      const siblingIndex = isRight ? currentIndex - 1 : currentIndex + 1;
+
+      const sibling = this.nodesByLevel[level]!.get(siblingIndex) ?? this.zeroHashes[level]!;
+      siblings.push(sibling);
+      indices.push(isRight ? 1 : 0);
+
+      currentIndex = Math.floor(currentIndex / 2);
+    }
+
+    const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
+    this.proofsByAddress.set(addressHex.toLowerCase(), {
+      siblings: siblings.map(s => '0x' + s.toString(16)),
+      indices,
+      root: '0x' + this.root.toString(16),
+      leaf: '0x' + leaf.toString(16),
+      index: leafIndex
+    });
+  }
+
+  // Regenerate all proofs (needed after insertions change sibling nodes)
+  private regenerateAllProofs() {
+    console.log('Regenerating all proofs...');
+    const startTime = Date.now();
+
+    for (const [leafIndex, leaf] of this.leaves) {
+      this.regenerateProofForLeaf(leafIndex, leaf);
+    }
+
+    console.log(`Regenerated ${this.leaves.size} proofs in ${Date.now() - startTime}ms`);
+  }
+
+  // Save tree state to file
+  private saveState() {
+    const state: TreeState = {
+      root: '0x' + this.root.toString(16),
+      nextIndex: this.nextIndex,
+      zeroHashes: this.zeroHashes.map(h => '0x' + h.toString(16)),
+      filledSubtrees: this.filledSubtrees.map(h => '0x' + h.toString(16)),
+      leaves: Array.from(this.leaves.entries()).map(([i, l]) => [i, '0x' + l.toString(16)])
+    };
+    fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2));
+    console.log(`Saved tree state to ${this.statePath}`);
+  }
+
+  // Check if address exists in tree
+  hasAddress(address: string): boolean {
+    return this.proofsByAddress.has(address.toLowerCase());
+  }
 }
 
 async function main() {
@@ -155,6 +293,78 @@ async function main() {
 
   app.get('/root', (_req, res) => {
     res.json({ root: tree.getRoot() });
+  });
+
+  // Owner-only middleware
+  const requireOwner = (req: Request, res: Response, next: NextFunction) => {
+    const apiKey = req.headers['x-api-key'];
+    if (apiKey !== OWNER_API_KEY) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+  };
+
+  // Owner-only: Add addresses to the tree
+  app.post('/addresses', requireOwner, (req, res) => {
+    const { addresses } = req.body;
+
+    if (!Array.isArray(addresses)) {
+      return res.status(400).json({ error: 'addresses must be an array' });
+    }
+
+    // Validate all addresses
+    const invalidAddresses: string[] = [];
+    const validAddresses: string[] = [];
+    const duplicateAddresses: string[] = [];
+
+    for (const addr of addresses) {
+      if (typeof addr !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(addr)) {
+        invalidAddresses.push(addr);
+      } else if (tree.hasAddress(addr)) {
+        duplicateAddresses.push(addr);
+      } else {
+        validAddresses.push(addr);
+      }
+    }
+
+    if (invalidAddresses.length > 0) {
+      return res.status(400).json({
+        error: 'Invalid address format',
+        invalidAddresses: invalidAddresses.slice(0, 10) // Show first 10
+      });
+    }
+
+    if (validAddresses.length === 0) {
+      return res.status(400).json({
+        error: 'No new addresses to add',
+        duplicateAddresses: duplicateAddresses.slice(0, 10)
+      });
+    }
+
+    try {
+      console.log(`Adding ${validAddresses.length} new addresses...`);
+      const result = tree.insertAddresses(validAddresses);
+
+      res.json({
+        success: true,
+        inserted: result.inserted,
+        newRoot: result.newRoot,
+        totalLeaves: tree.getLeafCount(),
+        skippedDuplicates: duplicateAddresses.length
+      });
+    } catch (error) {
+      console.error('Error inserting addresses:', error);
+      res.status(500).json({ error: 'Failed to insert addresses' });
+    }
+  });
+
+  // Owner-only: Get tree stats
+  app.get('/stats', requireOwner, (_req, res) => {
+    res.json({
+      root: tree.getRoot(),
+      leafCount: tree.getLeafCount(),
+      maxLeaves: 2 ** TREE_DEPTH
+    });
   });
 
   const PORT = process.env.PORT || 3001;
