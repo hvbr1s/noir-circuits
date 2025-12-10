@@ -138,9 +138,22 @@ Proves: "I know an address that hashes to a leaf in this merkle tree"
 |---------|----------|---------|
 | Sepolia | ZK HonkVerifier | [`0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B`](https://sepolia.etherscan.io/address/0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B#code) |
 
-## Updating the Allowlist
+## Updating the Membership List
 
-1. Edit `addresses.csv`
+### Dynamic (Recommended)
+
+Use the owner API to add addresses without downtime:
+
+```bash
+curl -X POST http://localhost:3001/addresses \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{"addresses": ["0x..."]}'
+```
+
+### From CSV (Full Rebuild)
+
+1. Edit `data/addresses.csv`
 2. Run `npm run build_tree`
 3. Restart API
 
