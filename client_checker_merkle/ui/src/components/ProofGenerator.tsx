@@ -68,7 +68,7 @@ export function ProofGenerator() {
       const { witness } = await noir.execute(inputs)
 
       const backend = new UltraHonkBackend(circuit.bytecode)
-      const proofData = await backend.generateProof(witness, { keccak: true })
+      const proofData = await backend.generateProof(witness, { keccakZK: true })
 
       const proofBytes = proofData.proof
       const proofHexStr = '0x' + Array.from(proofBytes).map(b => b.toString(16).padStart(2, '0')).join('')

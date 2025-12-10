@@ -19,8 +19,9 @@ The verifier learns nothing except "this person owns an address in the allowlist
 
 ### Privacy Model
 
-This uses `UltraHonkBackend` + `BaseHonkVerifier`:
+This uses `UltraHonkBackend` with `keccakZK` + `BaseZKHonkVerifier`:
 
+- **Zero-knowledge proofs** hide all private inputs (address, merkle path)
 - Your address is a **private circuit input** (never included in the proof)
 - The verifier only sees: proof bytes + merkle root
 
@@ -48,7 +49,7 @@ verifier_contract_factory/   # Noir circuit
 ├── src/main.nr              # Merkle membership proof (depth 21)
 └── target/
     ├── checker.json         # Compiled circuit
-    └── Verifier.sol         # Solidity verifier (BaseHonkVerifier)
+    └── Verifier.sol         # Solidity verifier (BaseZKHonkVerifier)
 
 client_checker_merkle/       # Backend + Frontend
 ├── addresses.csv            # Allowlist (one address per line)
@@ -75,9 +76,9 @@ Proves: "I know an address that hashes to a leaf in this merkle tree"
 
 ## Deployed Contracts
 
-| Network | Address |
-|---------|---------|
-| Sepolia | [`0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583`](https://sepolia.blockscout.com/address/0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583) |
+| Network | Contract | Address |
+|---------|----------|---------|
+| Sepolia | ZK HonkVerifier | [`0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B`](https://sepolia.blockscout.com/address/0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B) |
 
 ## Updating the Allowlist
 
