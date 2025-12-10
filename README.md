@@ -10,12 +10,12 @@ Prover                                    Verifier
 1. Enter address (private)
 2. Get merkle proof from API
 3. Generate ZK proof in browser
-4. Share proof ──────────────────────────▶ 5. Paste proof
+4. Share proof ─────────────────────────▶ 5. Paste proof
                                           6. Verify on-chain
                                           7. Result: valid/invalid
 ```
 
-The verifier learns nothing except "this person owns an address in the allowlist".
+The verifier learns nothing except "this person owns an address in the membership list".
 
 ### Privacy Model
 
@@ -62,9 +62,67 @@ client_checker_merkle/       # Backend + Frontend
 
 ## API
 
+### Public Endpoints
+
 ```
 GET /proof/:address    # Merkle proof for address
 GET /root              # Current merkle root
+```
+
+### Owner Endpoints
+
+These endpoints require authentication via the `X-API-Key` header. Set the `OWNER_API_KEY` environment variable when starting the server.
+
+```bash
+# Start server with custom API key
+OWNER_API_KEY=your-secret-key npm run api
+```
+
+#### Add Addresses
+
+```bash
+POST /addresses
+```
+
+Add new addresses to the merkle tree dynamically without rebuilding from CSV.
+
+```bash
+curl -X POST http://localhost:3001/addresses \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{"addresses": ["0x1234567890abcdef1234567890abcdef12345678"]}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "inserted": 1,
+  "newRoot": "0x...",
+  "totalLeaves": 10001,
+  "skippedDuplicates": 0
+}
+```
+
+#### Get Stats
+
+```bash
+GET /stats
+```
+
+Returns tree statistics (owner-only).
+
+```bash
+curl http://localhost:3001/stats -H "X-API-Key: your-secret-key"
+```
+
+**Response:**
+```json
+{
+  "root": "0x...",
+  "leafCount": 10000,
+  "maxLeaves": 2097152
+}
 ```
 
 ## Circuit
@@ -78,7 +136,7 @@ Proves: "I know an address that hashes to a leaf in this merkle tree"
 
 | Network | Contract | Address |
 |---------|----------|---------|
-| Sepolia | ZK HonkVerifier | [`0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B`](https://sepolia.blockscout.com/address/0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B) |
+| Sepolia | ZK HonkVerifier | [`0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B`](https://sepolia.etherscan.io/address/0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B#code) |
 
 ## Updating the Allowlist
 
