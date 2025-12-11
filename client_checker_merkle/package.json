@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "build_tree": "tsx ./src/build_tree.ts",
-    "api": "tsx ./src/api.ts"
+    "api": "tsx ./src/api.ts",
+    "start": "tsx ./src/api.ts"
   },
   "keywords": [],
   "author": "",
