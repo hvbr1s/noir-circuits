@@ -227,7 +227,8 @@ class MerkleTreeWithProofs {
 
 async function main() {
   const tree = new MerkleTreeWithProofs();
-  await tree.init('./data/tree_state.json');
+  const statePath = process.env.TREE_STATE_PATH || './data/tree_state.json';
+  await tree.init(statePath);
 
   const app = express();
   app.use(cors());
