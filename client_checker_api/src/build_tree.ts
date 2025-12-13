@@ -1,4 +1,4 @@
-import { buildPoseidonOpt } from '../node_modules/@types/circomlibjs';
+import { buildPoseidonOpt } from 'circomlibjs';
 import * as fs from 'fs';
 import * as readline from 'readline';
 

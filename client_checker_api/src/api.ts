@@ -1,7 +1,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import * as fs from 'fs';
-import { buildPoseidonOpt } from '../node_modules/@types/circomlibjs';
+import { buildPoseidonOpt } from 'circomlibjs';
 
 const TREE_DEPTH = 21;
 const OWNER_API_KEY = process.env.OWNER_API_KEY || 'change-me-in-production';
