@@ -225,8 +225,8 @@ async function main() {
   console.log('Root:', `0x${tree.getRoot().toString(16)}`);
 
   // Save tree state
-  tree.saveState('tree_state.json');
-  console.log('Saved tree state to tree_state.json');
+  tree.saveState('./data/tree_state.json');
+  console.log('Saved tree state to ./data/tree_state.json');
 }
 
 main().catch(console.error);
