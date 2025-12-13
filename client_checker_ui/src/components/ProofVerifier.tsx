@@ -123,7 +123,7 @@ export function ProofVerifier() {
           </span>
           {status === 'verified' && (
             <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '13px' }}>
-              Prover is a member of the allowlist
+              This address is managed by Fordefi
             </p>
           )}
           {error && (
