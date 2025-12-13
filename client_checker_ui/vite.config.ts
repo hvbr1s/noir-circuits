@@ -10,7 +10,6 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      // Fix pino browser export issue - use our no-op shim
       'pino': path.resolve(__dirname, 'src/pino-shim.ts')
     }
   },
@@ -18,7 +17,6 @@ export default defineConfig({
     esbuildOptions: {
       target: 'esnext'
     },
-    // Don't pre-bundle these - let them load their WASM naturally
     exclude: ['@aztec/bb.js', '@noir-lang/noir_js']
   },
   build: {
