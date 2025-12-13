@@ -28,11 +28,26 @@ function App() {
         <p style={{
           color: '#666',
           marginTop: 0,
-          marginBottom: '24px',
+          marginBottom: '16px',
           fontSize: '15px'
         }}>
-          Prove membership without revealing your address
+          Prove you're a Fordefi client without revealing your address
         </p>
+
+        <div style={{
+          background: '#1a1a1a',
+          border: '1px solid #2a2a2a',
+          borderRadius: '6px',
+          padding: '12px 14px',
+          marginBottom: '20px',
+          fontSize: '13px',
+          color: '#888',
+          lineHeight: '1.5'
+        }}>
+          <strong style={{ color: '#aaa' }}>How it works:</strong> Your address is hashed into a Merkle tree of verified clients.
+          A zero-knowledge proof confirms your address is in the tree without revealing which one.
+          The verifier only sees the proof—never your address.
+        </div>
 
         <div style={{
           display: 'flex',
