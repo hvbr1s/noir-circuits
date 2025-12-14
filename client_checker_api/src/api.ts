@@ -1,10 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
-import cors from 'cors';
-import * as fs from 'fs';
 import { buildPoseidonOpt } from 'circomlibjs';
+import * as fs from 'fs';
+import cors from 'cors';
+import dotenv from 'dotenv';
+
+dotenv.config()
 
 const TREE_DEPTH = 21;
-const OWNER_API_KEY = process.env.OWNER_API_KEY || 'change-me-in-production';
+const OWNER_API_KEY = process.env.OWNER_API_KEY;
 
 interface TreeState {
   root: string;
@@ -92,14 +95,13 @@ class MerkleTreeWithProofs {
     }
 
     console.log(`Tree built in ${Date.now() - startTime}ms`);
-    console.log(`Ready! ${this.addressToIndex.size} addresses indexed. Proofs computed on-demand.`);
+    console.log(`Ready! ${this.addressToIndex.size} addresses indexed ✅`);
   }
 
   hash(left: bigint, right: bigint): bigint {
     return this.poseidon.F.toObject(this.poseidon([left, right]));
   }
 
-  // Compute proof on-demand (avoids storing 1.4M proofs in memory)
   getProof(address: string): ProofData | null {
     const leafIndex = this.addressToIndex.get(address.toLowerCase());
     if (leafIndex === undefined) {
@@ -186,13 +188,35 @@ class MerkleTreeWithProofs {
   // Insert multiple addresses
   insertAddresses(addresses: string[]): { inserted: number; newRoot: string } {
     const startCount = this.nextIndex;
+    const totalAddresses = addresses.length;
+    const startTime = Date.now();
 
-    for (const address of addresses) {
-      this.insertAddress(address);
+    console.log(`[insertAddresses] Starting insertion of ${totalAddresses} addresses...`);
+    console.log(`[insertAddresses] Current tree index: ${startCount}`);
+
+    for (let i = 0; i < addresses.length; i++) {
+      this.insertAddress(addresses[i]!);
+
+      // Log progress every 100 addresses or at the end
+      if ((i + 1) % 100 === 0 || i === addresses.length - 1) {
+        const elapsed = Date.now() - startTime;
+        const rate = ((i + 1) / elapsed * 1000).toFixed(1);
+        console.log(`[insertAddresses] Progress: ${i + 1}/${totalAddresses} (${rate} addr/sec)`);
+      }
     }
 
+    const insertionTime = Date.now() - startTime;
+    console.log(`[insertAddresses] Tree updates completed in ${insertionTime}ms`);
+
     // Save updated state
+    console.log(`[insertAddresses] Saving tree state to disk...`);
+    const saveStartTime = Date.now();
     this.saveState();
+    const saveTime = Date.now() - saveStartTime;
+    console.log(`[insertAddresses] State saved in ${saveTime}ms`);
+
+    const totalTime = Date.now() - startTime;
+    console.log(`[insertAddresses] Complete: ${this.nextIndex - startCount} addresses inserted in ${totalTime}ms`);
 
     return {
       inserted: this.nextIndex - startCount,
@@ -227,8 +251,8 @@ class MerkleTreeWithProofs {
 
 async function main() {
   const tree = new MerkleTreeWithProofs();
-  const statePath = process.env.TREE_STATE_PATH || './data/tree_state.json';
-  await tree.init(statePath);
+  const statePath = process.env.TREE_STATE_PATH;
+  await tree.init(statePath!);
 
   const app = express();
   app.use(cors());
@@ -265,12 +289,16 @@ async function main() {
   // Owner-only: Add addresses to the tree
   app.post('/addresses', requireOwner, (req, res) => {
     const { addresses } = req.body;
+    const requestStartTime = Date.now();
+    console.log(`[POST /addresses] Received request with ${Array.isArray(addresses) ? addresses.length : 'invalid'} addresses`);
 
     if (!Array.isArray(addresses)) {
       return res.status(400).json({ error: 'addresses must be an array' });
     }
 
     // Validate all addresses
+    console.log(`[POST /addresses] Validating ${addresses.length} addresses...`);
+    const validationStartTime = Date.now();
     const invalidAddresses: string[] = [];
     const validAddresses: string[] = [];
     const duplicateAddresses: string[] = [];
@@ -284,6 +312,9 @@ async function main() {
         validAddresses.push(addr);
       }
     }
+
+    const validationTime = Date.now() - validationStartTime;
+    console.log(`[POST /addresses] Validation completed in ${validationTime}ms: ${validAddresses.length} valid, ${duplicateAddresses.length} duplicates, ${invalidAddresses.length} invalid`);
 
     if (invalidAddresses.length > 0) {
       return res.status(400).json({
@@ -300,8 +331,13 @@ async function main() {
     }
 
     try {
-      console.log(`Adding ${validAddresses.length} new addresses...`);
+      console.log(`[POST /addresses] Inserting ${validAddresses.length} addresses into merkle tree...`);
+      const insertStartTime = Date.now();
       const result = tree.insertAddresses(validAddresses);
+      const insertTime = Date.now() - insertStartTime;
+
+      const totalTime = Date.now() - requestStartTime;
+      console.log(`[POST /addresses] Request completed in ${totalTime}ms (validation: ${validationTime}ms, insertion: ${insertTime}ms)`);
 
       res.json({
         success: true,
@@ -311,7 +347,7 @@ async function main() {
         skippedDuplicates: duplicateAddresses.length
       });
     } catch (error) {
-      console.error('Error inserting addresses:', error);
+      console.error('[POST /addresses] Error inserting addresses:', error);
       res.status(500).json({ error: 'Failed to insert addresses' });
     }
   });
