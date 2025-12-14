@@ -4,13 +4,15 @@ import * as fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Storage } from '@google-cloud/storage';
+import { parser } from 'stream-json';
+import { streamArray } from 'stream-json/streamers/StreamArray';
+import { chain } from 'stream-chain';
 
 dotenv.config()
 
 const TREE_DEPTH = 21;
 const OWNER_API_KEY = process.env.OWNER_API_KEY;
 
-// Download tree state from GCS if configured
 async function downloadTreeState(localPath: string): Promise<void> {
   const gcsBucket = process.env.GCS_BUCKET;
   const gcsObjectKey = process.env.GCS_OBJECT_KEY || 'tree_state.json';
@@ -70,30 +72,18 @@ class MerkleTreeWithProofs {
     console.log('Initializing Poseidon...');
     this.poseidon = await buildPoseidonOpt();
 
-    console.log('Loading tree state...');
-    const state: TreeState = JSON.parse(fs.readFileSync(statePath, 'utf8'));
-
-    this.root = BigInt(state.root);
-    this.zeroHashes = state.zeroHashes.map(h => BigInt(h));
-    this.filledSubtrees = state.filledSubtrees.map(h => BigInt(h));
-    this.nextIndex = state.nextIndex;
-
-    // Build all nodes level by level (bottom-up)
-    console.log(`Building tree with ${state.leaves.length} leaves...`);
+    console.log('Loading tree state with streaming parser...');
     const startTime = Date.now();
 
-    // Level 0: leaves
+    // Initialize level 0
     this.nodesByLevel = [];
     this.nodesByLevel[0] = new Map();
-    for (const [index, leafHex] of state.leaves) {
-      const leaf = BigInt(leafHex);
-      this.nodesByLevel[0].set(index, leaf);
-      // Build address -> index lookup (lightweight: just stores index, not full proof)
-      const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
-      this.addressToIndex.set(addressHex.toLowerCase(), index);
-    }
+
+    // Stream JSON
+    await this.streamParseTreeState(statePath);
 
     // Build levels 1 to TREE_DEPTH
+    console.log('Building tree levels...');
     for (let level = 1; level <= TREE_DEPTH; level++) {
       this.nodesByLevel[level] = new Map();
       const prevLevel = this.nodesByLevel[level - 1]!;
@@ -125,7 +115,72 @@ class MerkleTreeWithProofs {
     }
 
     console.log(`Tree built in ${Date.now() - startTime}ms`);
-    console.log(`Ready! ${this.addressToIndex.size} addresses indexed ✅`);
+    console.log(`Ready! ${this.addressToIndex.size} addresses indexed`);
+  }
+
+  // Stream parse the tree state JSON file
+  private streamParseTreeState(statePath: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let leafCount = 0;
+      let currentKey = '';
+
+      const jsonParser = parser();
+      const fileStream = fs.createReadStream(statePath);
+
+      fileStream.pipe(jsonParser);
+
+      jsonParser.on('data', (data: { name: string; value: any }) => {
+        const { name, value } = data;
+
+        if (name === 'keyValue') {
+          currentKey = value;
+        } else if (name === 'stringValue' || name === 'numberValue') {
+          if (currentKey === 'root') {
+            this.root = BigInt(value);
+          } else if (currentKey === 'nextIndex') {
+            this.nextIndex = value;
+          }
+        } else if (name === 'startArray' && currentKey === 'zeroHashes') {
+          this.zeroHashes = [];
+        } else if (name === 'startArray' && currentKey === 'filledSubtrees') {
+          this.filledSubtrees = [];
+        } else if (name === 'stringValue' && currentKey === 'zeroHashes') {
+          this.zeroHashes.push(BigInt(value));
+        } else if (name === 'stringValue' && currentKey === 'filledSubtrees') {
+          this.filledSubtrees.push(BigInt(value));
+        }
+      });
+
+      // Use a separate pipeline to handle the leaves array efficiently
+      const pipeline = chain([
+        fs.createReadStream(statePath),
+        parser({ jsonStreaming: false }),
+        streamArray(),
+      ]);
+
+      pipeline.on('data', ({ value }: { value: any }) => {
+        // The streamArray emits each element of arrays it finds
+        // We detect leaf entries by their shape: [number, string]
+        if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'number' && typeof value[1] === 'string') {
+          const [index, leafHex] = value as [number, string];
+          const leaf = BigInt(leafHex);
+          this.nodesByLevel[0]!.set(index, leaf);
+          const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
+          this.addressToIndex.set(addressHex.toLowerCase(), index);
+          leafCount++;
+          if (leafCount % 100000 === 0) {
+            console.log(`Loaded ${leafCount} leaves...`);
+          }
+        }
+      });
+
+      pipeline.on('end', () => {
+        console.log(`Streamed ${leafCount} leaves`);
+        resolve();
+      });
+
+      pipeline.on('error', reject);
+    });
   }
 
   hash(left: bigint, right: bigint): bigint {
