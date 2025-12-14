@@ -3,11 +3,41 @@ import { buildPoseidonOpt } from 'circomlibjs';
 import * as fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { Storage } from '@google-cloud/storage';
 
 dotenv.config()
 
 const TREE_DEPTH = 21;
 const OWNER_API_KEY = process.env.OWNER_API_KEY;
+
+// Download tree state from GCS if configured
+async function downloadTreeState(localPath: string): Promise<void> {
+  const gcsBucket = process.env.GCS_BUCKET;
+  const gcsObjectKey = process.env.GCS_OBJECT_KEY || 'tree_state.json';
+
+  if (!gcsBucket) {
+    console.log('GCS_BUCKET not set, using local tree state file');
+    return;
+  }
+
+  console.log(`Downloading tree state from GCS: gs://${gcsBucket}/${gcsObjectKey}`);
+  const startTime = Date.now();
+
+  let storage: Storage;
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    storage = new Storage({ credentials });
+  } else {
+    storage = new Storage();
+  }
+
+  const bucket = storage.bucket(gcsBucket);
+  const file = bucket.file(gcsObjectKey);
+
+  await file.download({ destination: localPath });
+
+  console.log(`Downloaded tree state in ${Date.now() - startTime}ms`);
+}
 
 interface TreeState {
   root: string;
@@ -242,8 +272,6 @@ class MerkleTreeWithProofs {
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2));
     console.log(`Saved tree state to ${this.statePath}`);
   }
-
-  // Check if address exists in tree
   hasAddress(address: string): boolean {
     return this.addressToIndex.has(address.toLowerCase());
   }
@@ -251,8 +279,11 @@ class MerkleTreeWithProofs {
 
 async function main() {
   const tree = new MerkleTreeWithProofs();
-  const statePath = process.env.TREE_STATE_PATH;
-  await tree.init(statePath!);
+  const statePath = process.env.TREE_STATE_PATH || './data/tree_state.json';
+
+  await downloadTreeState(statePath);
+
+  await tree.init(statePath);
 
   const app = express();
   app.use(cors());
