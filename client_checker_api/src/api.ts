@@ -335,15 +335,23 @@ async function main() {
   const tree = new MerkleTreeWithProofs();
   const statePath = process.env.TREE_STATE_PATH || './data/tree_state.json';
 
-  await downloadTreeState(statePath);
-
-  await tree.init(statePath);
+  // Track initialization state
+  let isReady = false;
 
   const app = express();
   app.use(cors());
   app.use(express.json());
 
+  // Health check endpoint - responds immediately even during init
+  app.get('/health', (_req, res) => {
+    res.json({ status: isReady ? 'ready' : 'initializing' });
+  });
+
   app.get('/proof/:address', (req, res) => {
+    if (!isReady) {
+      return res.status(503).json({ error: 'Server initializing, please wait' });
+    }
+
     const address = req.params.address;
 
     if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -359,8 +367,23 @@ async function main() {
   });
 
   app.get('/root', (_req, res) => {
+    if (!isReady) {
+      return res.status(503).json({ error: 'Server initializing, please wait' });
+    }
     res.json({ root: tree.getRoot() });
   });
+
+  // Start server BEFORE tree initialization so Render sees the port open
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}, initializing tree...`);
+  });
+
+  // Now initialize the tree (this takes a while)
+  await downloadTreeState(statePath);
+  await tree.init(statePath);
+  isReady = true;
+  console.log('Tree initialization complete, server ready!');
 
   // Owner-only middleware
   const requireOwner = (req: Request, res: Response, next: NextFunction) => {
@@ -444,11 +467,6 @@ async function main() {
       leafCount: tree.getLeafCount(),
       maxLeaves: 2 ** TREE_DEPTH
     });
-  });
-
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => {
-    console.log(`Merkle proof API running on http://localhost:${PORT}`);
   });
 }
 
