@@ -5,6 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { Storage } from '@google-cloud/storage';
 import { parser } from 'stream-json';
+import { pick } from 'stream-json/filters/Pick';
 import { streamArray } from 'stream-json/streamers/StreamArray';
 import { chain } from 'stream-chain';
 
@@ -151,26 +152,24 @@ class MerkleTreeWithProofs {
         }
       });
 
-      // Use a separate pipeline to handle the leaves array efficiently
+      // Use pick to target the "leaves" array specifically
       const pipeline = chain([
         fs.createReadStream(statePath),
-        parser({ jsonStreaming: false }),
+        parser(),
+        pick({ filter: 'leaves' }),
         streamArray(),
       ]);
 
       pipeline.on('data', ({ value }: { value: any }) => {
-        // The streamArray emits each element of arrays it finds
-        // We detect leaf entries by their shape: [number, string]
-        if (Array.isArray(value) && value.length === 2 && typeof value[0] === 'number' && typeof value[1] === 'string') {
-          const [index, leafHex] = value as [number, string];
-          const leaf = BigInt(leafHex);
-          this.nodesByLevel[0]!.set(index, leaf);
-          const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
-          this.addressToIndex.set(addressHex.toLowerCase(), index);
-          leafCount++;
-          if (leafCount % 100000 === 0) {
-            console.log(`Loaded ${leafCount} leaves...`);
-          }
+        // Each value is a leaf entry: [index, leafHex]
+        const [index, leafHex] = value as [number, string];
+        const leaf = BigInt(leafHex);
+        this.nodesByLevel[0]!.set(index, leaf);
+        const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
+        this.addressToIndex.set(addressHex.toLowerCase(), index);
+        leafCount++;
+        if (leafCount % 100000 === 0) {
+          console.log(`Loaded ${leafCount} leaves...`);
         }
       });
 
