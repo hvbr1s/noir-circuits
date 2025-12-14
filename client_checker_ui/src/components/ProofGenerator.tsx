@@ -67,7 +67,7 @@ export function ProofGenerator() {
 
       const { witness } = await noir.execute(inputs)
 
-      const backend = new UltraHonkBackend(circuit.bytecode, {})
+      const backend = new UltraHonkBackend(circuit.bytecode)
       const proofData = await backend.generateProof(witness, { keccakZK: true })
 
       const proofBytes = proofData.proof
