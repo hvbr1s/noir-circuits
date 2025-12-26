@@ -1,6 +1,8 @@
 # Noir Merkle Membership Proof
 
-Prove your Ethereum address is in an allowlist without revealing which address you own.
+Prove your EVM address is in an allowlist without revealing which address you own.
+
+[![Demo Video](https://img.youtube.com/vi/YPVPf1bL7yY/0.jpg)](https://youtu.be/YPVPf1bL7yY)
 
 ## How It Works
 
