@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { usePublicClient } from 'wagmi'
 import { VERIFIER_ADDRESS, VERIFIER_ABI } from '../config/verifier'
 
-const API_URL = 'http://localhost:3001'
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
 
 type Status = 'idle' | 'verifying' | 'verified' | 'invalid' | 'error'
 

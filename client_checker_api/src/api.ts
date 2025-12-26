@@ -3,11 +3,40 @@ import { buildPoseidonOpt } from 'circomlibjs';
 import * as fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { Storage } from '@google-cloud/storage';
 
 dotenv.config()
 
 const TREE_DEPTH = 21;
 const OWNER_API_KEY = process.env.OWNER_API_KEY;
+
+async function downloadTreeState(localPath: string): Promise<void> {
+  const gcsBucket = process.env.GCS_BUCKET;
+  const gcsObjectKey = process.env.GCS_OBJECT_KEY || 'tree_state.json';
+
+  if (!gcsBucket) {
+    console.log('GCS_BUCKET not set, using local tree state file');
+    return;
+  }
+
+  console.log(`Downloading tree state from GCS: gs://${gcsBucket}/${gcsObjectKey}`);
+  const startTime = Date.now();
+
+  let storage: Storage;
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+    storage = new Storage({ credentials });
+  } else {
+    storage = new Storage();
+  }
+
+  const bucket = storage.bucket(gcsBucket);
+  const file = bucket.file(gcsObjectKey);
+
+  await file.download({ destination: localPath });
+
+  console.log(`Downloaded tree state in ${Date.now() - startTime}ms`);
+}
 
 interface TreeState {
   root: string;
@@ -48,7 +77,6 @@ class MerkleTreeWithProofs {
     this.filledSubtrees = state.filledSubtrees.map(h => BigInt(h));
     this.nextIndex = state.nextIndex;
 
-    // Build all nodes level by level (bottom-up)
     console.log(`Building tree with ${state.leaves.length} leaves...`);
     const startTime = Date.now();
 
@@ -58,17 +86,16 @@ class MerkleTreeWithProofs {
     for (const [index, leafHex] of state.leaves) {
       const leaf = BigInt(leafHex);
       this.nodesByLevel[0].set(index, leaf);
-      // Build address -> index lookup (lightweight: just stores index, not full proof)
       const addressHex = '0x' + leaf.toString(16).padStart(40, '0');
       this.addressToIndex.set(addressHex.toLowerCase(), index);
     }
 
     // Build levels 1 to TREE_DEPTH
+    console.log('Building tree levels...');
     for (let level = 1; level <= TREE_DEPTH; level++) {
       this.nodesByLevel[level] = new Map();
       const prevLevel = this.nodesByLevel[level - 1]!;
 
-      // Find all parent indices that have at least one non-zero child
       const parentIndices = new Set<number>();
       for (const childIndex of prevLevel.keys()) {
         parentIndices.add(Math.floor(childIndex / 2));
@@ -95,7 +122,7 @@ class MerkleTreeWithProofs {
     }
 
     console.log(`Tree built in ${Date.now() - startTime}ms`);
-    console.log(`Ready! ${this.addressToIndex.size} addresses indexed ✅`);
+    console.log(`Ready! ${this.addressToIndex.size} addresses indexed`);
   }
 
   hash(left: bigint, right: bigint): bigint {
@@ -242,8 +269,6 @@ class MerkleTreeWithProofs {
     fs.writeFileSync(this.statePath, JSON.stringify(state, null, 2));
     console.log(`Saved tree state to ${this.statePath}`);
   }
-
-  // Check if address exists in tree
   hasAddress(address: string): boolean {
     return this.addressToIndex.has(address.toLowerCase());
   }
@@ -251,14 +276,25 @@ class MerkleTreeWithProofs {
 
 async function main() {
   const tree = new MerkleTreeWithProofs();
-  const statePath = process.env.TREE_STATE_PATH;
-  await tree.init(statePath!);
+  const statePath = process.env.TREE_STATE_PATH || './data/tree_state.json';
+
+  // Track initialization state
+  let isReady = false;
 
   const app = express();
   app.use(cors());
   app.use(express.json());
 
+  // Health check endpoint - responds immediately even during init
+  app.get('/health', (_req, res) => {
+    res.json({ status: isReady ? 'ready' : 'initializing' });
+  });
+
   app.get('/proof/:address', (req, res) => {
+    if (!isReady) {
+      return res.status(503).json({ error: 'Server initializing, please wait' });
+    }
+
     const address = req.params.address;
 
     if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -274,8 +310,23 @@ async function main() {
   });
 
   app.get('/root', (_req, res) => {
+    if (!isReady) {
+      return res.status(503).json({ error: 'Server initializing, please wait' });
+    }
     res.json({ root: tree.getRoot() });
   });
+
+  // Start server BEFORE tree initialization so Render sees the port open
+  const PORT = process.env.PORT || 3001;
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}, initializing tree...`);
+  });
+
+  // Now initialize the tree (this takes a while)
+  await downloadTreeState(statePath);
+  await tree.init(statePath);
+  isReady = true;
+  console.log('Tree initialization complete, server ready!');
 
   // Owner-only middleware
   const requireOwner = (req: Request, res: Response, next: NextFunction) => {
@@ -359,11 +410,6 @@ async function main() {
       leafCount: tree.getLeafCount(),
       maxLeaves: 2 ** TREE_DEPTH
     });
-  });
-
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => {
-    console.log(`Merkle proof API running on http://localhost:${PORT}`);
   });
 }
 

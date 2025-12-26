@@ -5,7 +5,6 @@
   "main": "index.js",
   "scripts": {
     "build_tree": "tsx ./src/build_tree.ts",
-    "api": "tsx ./src/api.ts",
     "start": "tsx ./src/api.ts"
   },
   "keywords": [],
@@ -16,13 +15,17 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.6",
     "@types/node": "^24.10.1",
+    "@types/stream-json": "^1.7.8",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.18.0",
     "circomlibjs": "^0.1.7",
     "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "level": "^10.0.0"
+    "level": "^10.0.0",
+    "stream-json": "^1.9.1"
   }
 }
