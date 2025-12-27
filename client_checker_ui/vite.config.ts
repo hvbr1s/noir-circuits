@@ -17,7 +17,8 @@ export default defineConfig({
     esbuildOptions: {
       target: 'esnext'
     },
-    exclude: ['@aztec/bb.js', '@noir-lang/noir_js']
+    exclude: ['@aztec/bb.js', '@noir-lang/noir_js'],
+    include: ['@noble/secp256k1', 'viem']
   },
   build: {
     target: 'esnext'

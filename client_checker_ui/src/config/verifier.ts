@@ -1,5 +1,5 @@
-//export const VERIFIER_ADDRESS = '0xBBf5C392029E8e7651b0eFD5C2B36B7e01072583' as const // Non-ZK HonkVerifier
-export const VERIFIER_ADDRESS = '0x3ad1a34ffd433c8c591B6F5fde690196E9C05c6B' as const // ZK Honk Verifier
+// ECDSA + Merkle verifier (Ethereum Sepolia)
+export const VERIFIER_ADDRESS = '0x2701541D93Cb39E280b77ff3B155C301a0F40fAB' as const
 
 export const VERIFIER_ABI = [
   {

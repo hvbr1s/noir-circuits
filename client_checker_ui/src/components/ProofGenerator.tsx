@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useAccount, useConnect, useDisconnect, useSignMessage } from 'wagmi';
+import { recoverPublicKey, toBytes, hashMessage } from 'viem';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -10,37 +12,66 @@ interface MerkleProof {
   index: number
 }
 
-type Status = 'idle' | 'fetching' | 'proving' | 'done' | 'error'
+type Status = 'idle' | 'signing' | 'fetching' | 'proving' | 'done' | 'error'
 
 export function ProofGenerator() {
-  const [address, setAddress] = useState('')
+  const { address, isConnected } = useAccount()
+  const { connect, connectors } = useConnect()
+  const { disconnect } = useDisconnect()
+  const { signMessageAsync } = useSignMessage()
+
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
   const [proofHex, setProofHex] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   const handleProve = async () => {
-    const inputAddress = address.trim()
-
-    if (!inputAddress || !/^0x[a-fA-F0-9]{40}$/.test(inputAddress)) {
-      setError('Enter a valid Ethereum address')
+    if (!address) {
+      setError('Connect your wallet first')
       return
     }
 
     setError(null)
     setProofHex(null)
-    setStatus('fetching')
+    setStatus('signing')
 
     try {
-      // Fetch Merkle proof from API
-      const res = await fetch(`${API_URL}/proof/${inputAddress}`)
+      // Step 1: Create timestamped challenge message
+      const timestamp = Math.floor(Date.now() / 1000)
+      const challengeMessage = `Prove Fordefi membership: ${timestamp}`
+
+      // Step 2: Sign the challenge message
+      const signature = await signMessageAsync({ message: challengeMessage })
+
+      // Step 3: Hash the message (Ethereum personal_sign format)
+      const messageHash = hashMessage(challengeMessage)
+      const hashedMessageBytes = toBytes(messageHash)
+
+      // Step 4: Recover public key from signature
+      const publicKey = await recoverPublicKey({
+        hash: messageHash,
+        signature
+      })
+
+      // publicKey is 65 bytes: 0x04 + x (32 bytes) + y (32 bytes)
+      const pubKeyBytes = toBytes(publicKey)
+      const pubKeyX = Array.from(pubKeyBytes.slice(1, 33))
+      const pubKeyY = Array.from(pubKeyBytes.slice(33, 65))
+
+      // Step 5: Extract r and s from signature (drop v)
+      const sigBytes = toBytes(signature)
+      const sigRS = Array.from(sigBytes.slice(0, 64))
+
+      // Step 6: Fetch Merkle proof from API
+      setStatus('fetching')
+      const res = await fetch(`${API_URL}/proof/${address}`)
       if (!res.ok) {
         const data = await res.json()
         throw new Error(data.error || 'Address not in tree')
       }
       const merkleProof: MerkleProof = await res.json()
 
-      // Generate proof
+      // Step 7: Generate proof
       setStatus('proving')
 
       const [{ Noir }, { UltraHonkBackend }] = await Promise.all([
@@ -58,10 +89,14 @@ export function ProofGenerator() {
         return '0x' + clean.padStart(64, '0')
       }
 
+      // Input order must match circuit: siblings, indices, pub_key_x, pub_key_y, signature, hashed_message, root
       const inputs = {
-        address: padHex(inputAddress),
         siblings: merkleProof.siblings.map(padHex),
         indices: merkleProof.indices.map(String),
+        pub_key_x: pubKeyX,
+        pub_key_y: pubKeyY,
+        signature: sigRS,
+        hashed_message: Array.from(hashedMessageBytes),
         root: padHex(merkleProof.root)
       }
 
@@ -73,7 +108,16 @@ export function ProofGenerator() {
       const proofBytes = proofData.proof
       const proofHexStr = '0x' + Array.from(proofBytes).map(b => b.toString(16).padStart(2, '0')).join('')
 
-      setProofHex(proofHexStr)
+      // Public inputs from circuit: hashed_message[32] + root + recovered_address
+      const publicInputsHex = proofData.publicInputs.map((pi: string) => {
+        const clean = pi.startsWith('0x') ? pi.slice(2) : pi
+        return '0x' + clean.padStart(64, '0')
+      }).join(',')
+
+      // Combine proof and public inputs for sharing
+      const combinedOutput = `${proofHexStr}:${publicInputsHex}`
+
+      setProofHex(combinedOutput)
       setStatus('done')
     } catch (err) {
       setStatus('error')
@@ -89,10 +133,11 @@ export function ProofGenerator() {
     }
   }
 
-  const isLoading = status === 'fetching' || status === 'proving'
+  const isLoading = status === 'signing' || status === 'fetching' || status === 'proving'
 
   const statusText: Record<Status, string> = {
     idle: 'Generate Proof',
+    signing: 'Sign message in wallet...',
     fetching: 'Fetching merkle proof...',
     proving: 'Generating proof...',
     done: 'Generate Proof',
@@ -101,41 +146,81 @@ export function ProofGenerator() {
 
   return (
     <div>
-      <label style={{ display: 'block', marginBottom: '6px', color: '#888', fontSize: '13px' }}>
-        Your address (private)
-      </label>
-      <input
-        type="text"
-        placeholder="0x..."
-        value={address}
-        onChange={(e) => setAddress(e.target.value)}
-        spellCheck={false}
-        style={{
-          width: '100%',
-          padding: '14px 16px',
-          background: '#111',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          color: '#fff',
-          fontFamily: 'monospace',
-          fontSize: '15px',
-          outline: 'none',
-          boxSizing: 'border-box',
-          marginBottom: '12px'
-        }}
-      />
+      {/* Wallet Connection */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ display: 'block', marginBottom: '6px', color: '#888', fontSize: '13px' }}>
+          Your Wallet
+        </label>
+        {isConnected ? (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            padding: '14px 16px',
+            background: '#111',
+            border: '1px solid #333',
+            borderRadius: '8px'
+          }}>
+            <div style={{ flex: 1 }}>
+              <div style={{
+                color: '#fff',
+                fontFamily: 'monospace',
+                fontSize: '14px',
+                wordBreak: 'break-all'
+              }}>
+                {address}
+              </div>
+              <div style={{ color: '#22c55e', fontSize: '12px', marginTop: '4px' }}>
+                Connected
+              </div>
+            </div>
+            <button
+              onClick={() => disconnect()}
+              style={{
+                padding: '8px 14px',
+                background: '#222',
+                color: '#888',
+                border: '1px solid #333',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                fontSize: '13px'
+              }}
+            >
+              Disconnect
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => connect({ connector: connectors[0] })}
+            style={{
+              width: '100%',
+              padding: '14px',
+              background: '#fff',
+              color: '#000',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '15px',
+              fontWeight: 500
+            }}
+          >
+            Connect Wallet
+          </button>
+        )}
+      </div>
 
+      {/* Generate Proof Button */}
       <button
         onClick={handleProve}
-        disabled={isLoading}
+        disabled={isLoading || !isConnected}
         style={{
           width: '100%',
           padding: '14px',
-          background: isLoading ? '#222' : '#fff',
-          color: isLoading ? '#666' : '#000',
+          background: isLoading || !isConnected ? '#222' : '#fff',
+          color: isLoading || !isConnected ? '#666' : '#000',
           border: 'none',
           borderRadius: '8px',
-          cursor: isLoading ? 'default' : 'pointer',
+          cursor: isLoading || !isConnected ? 'default' : 'pointer',
           fontSize: '15px',
           fontWeight: 500,
           transition: 'all 0.15s ease'
