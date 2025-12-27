@@ -2,8 +2,6 @@
 
 Prove your EVM address is in an allowlist without revealing which address you own — using ECDSA signature verification.
 
-[![Demo Video](https://img.youtube.com/vi/YPVPf1bL7yY/0.jpg)](https://youtu.be/YPVPf1bL7yY)
-
 ## How It Works
 
 ```
