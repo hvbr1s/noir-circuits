@@ -31,7 +31,7 @@ function App() {
           marginBottom: '16px',
           fontSize: '15px'
         }}>
-          Prove you're a Fordefi client without revealing your address
+          Prove your address is managed by Fordefi using ECDSA signature verification
         </p>
 
         <div style={{
@@ -44,9 +44,9 @@ function App() {
           color: '#888',
           lineHeight: '1.5'
         }}>
-          <strong style={{ color: '#aaa' }}>How it works:</strong> Your address is hashed into a Merkle tree of verified clients.
-          A zero-knowledge proof confirms your address is in the tree without revealing which one.
-          The verifier only sees the proof—never your address.
+          <strong style={{ color: '#aaa' }}>How it works:</strong> Sign a challenge message with your wallet.
+          The ZK proof recovers your address from the signature and verifies it's in the Fordefi client Merkle tree.
+          Share the proof safely—only the intended verifier can see the recovered address.
         </div>
 
         <div style={{
