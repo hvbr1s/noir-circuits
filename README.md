@@ -129,7 +129,7 @@ curl http://localhost:3001/stats -H "X-API-Key: your-secret-key"
 
 | Network  | Contract                         | Address |
 |----------|----------------------------------|---------|
-| Sepolia  | ZK HonkVerifier (ECDSA + Merkle) | [`0xA9C052e88d03eEd4ccfC6C4D12846829C25Ac907`](https://sepolia.etherscan.io/address/0xA9C052e88d03eEd4ccfC6C4D12846829C25Ac907#code) |
+| Sepolia  | ZK HonkVerifier (ECDSA + Merkle) | [`0x2701541D93Cb39E280b77ff3B155C301a0F40fAB`](https://sepolia.etherscan.io/address/0x2701541D93Cb39E280b77ff3B155C301a0F40fAB#code) |
 | Ethereum | ZK HonkVerifier (ECDSA only)     | [`0x26ea6615d4Cfe23E932BDfB3304C4E8d1afB71F3`](https://etherscan.io/address/0x26ea6615d4Cfe23E932BDfB3304C4E8d1afB71F3#code) |
 
 ## Building the Circuit
