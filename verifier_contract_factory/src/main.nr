@@ -2,9 +2,14 @@ use dep::poseidon::poseidon;
 
 global TREE_DEPTH: u32 = 21; // 2,097,152 leaves
 
-
 #[export]
-fn main(address: Field, siblings: [Field; TREE_DEPTH], indices: [Field; TREE_DEPTH], root: pub Field) {
+fn main(
+    address: Field, 
+    siblings: [Field; TREE_DEPTH], 
+    indices: [Field; TREE_DEPTH], 
+    root: pub Field
+    ) 
+{
     let computed_root = compute_merkle_root(address, siblings, indices);
     assert(computed_root == root);
 }
