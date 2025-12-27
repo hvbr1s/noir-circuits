@@ -2,52 +2,75 @@ import { useState } from 'react'
 import { usePublicClient } from 'wagmi'
 import { VERIFIER_ADDRESS, VERIFIER_ABI } from '../config/verifier'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001'
-
 type Status = 'idle' | 'verifying' | 'verified' | 'invalid' | 'error'
 
 export function ProofVerifier() {
-  const [proof, setProof] = useState('')
+  const [proofInput, setProofInput] = useState('')
   const [status, setStatus] = useState<Status>('idle')
   const [error, setError] = useState<string | null>(null)
+  const [recoveredAddress, setRecoveredAddress] = useState<string | null>(null)
 
   const publicClient = usePublicClient()
 
   const handleVerify = async () => {
-    const proofHex = proof.trim()
+    const input = proofInput.trim()
 
-    if (!proofHex || !proofHex.startsWith('0x')) {
-      setError('Enter a valid proof (hex string starting with 0x)')
+    // Parse combined format: proof:publicInput1,publicInput2,...
+    const colonIndex = input.indexOf(':')
+    if (colonIndex === -1) {
+      setError('Invalid format. Expected proof:publicInputs')
+      return
+    }
+
+    const proofHex = input.slice(0, colonIndex)
+    const publicInputsStr = input.slice(colonIndex + 1)
+
+    if (!proofHex.startsWith('0x')) {
+      setError('Invalid format. Proof should start with 0x')
+      return
+    }
+
+    // Parse public inputs (comma-separated hex values)
+    const publicInputs = publicInputsStr.split(',').map(pi => pi.trim()) as `0x${string}`[]
+
+    if (publicInputs.length === 0 || !publicInputs[0].startsWith('0x')) {
+      setError('Invalid format. Public inputs should be comma-separated hex values')
       return
     }
 
     setError(null)
+    setRecoveredAddress(null)
     setStatus('verifying')
 
     try {
-      // Fetch current root from API
-      const rootRes = await fetch(`${API_URL}/root`)
-      if (!rootRes.ok) {
-        throw new Error('Failed to fetch merkle root')
-      }
-      const { root } = await rootRes.json()
-
-      // Pad root to 32 bytes
-      const clean = root.startsWith('0x') ? root.slice(2) : root
-      const rootHex = ('0x' + clean.padStart(64, '0')) as `0x${string}`
-
       if (!publicClient) {
         throw new Error('No RPC client available')
       }
 
-      const isValid = await publicClient.readContract({
+      // The public inputs come directly from the proof generation
+      // They include: hashed_message (32 fields) + root (1 field) + returned address (1 field)
+      // The verifier contract expects exactly these public inputs
+
+      const result = await publicClient.readContract({
         address: VERIFIER_ADDRESS,
         abi: VERIFIER_ABI,
         functionName: 'verify',
-        args: [proofHex as `0x${string}`, [rootHex]]
+        args: [proofHex as `0x${string}`, publicInputs]
       })
 
-      setStatus(isValid ? 'verified' : 'invalid')
+      if (result) {
+        // Extract the recovered address from the public inputs
+        // The last public input is the returned address (after 32 bytes of hashed_message + root)
+        // Public inputs order: hashed_message[32] + root + address
+        const addressField = publicInputs[publicInputs.length - 1]
+        // Convert from field to ethereum address (take last 40 hex chars = 20 bytes)
+        const cleanAddress = addressField.startsWith('0x') ? addressField.slice(2) : addressField
+        const ethAddress = '0x' + cleanAddress.slice(-40)
+        setRecoveredAddress(ethAddress)
+        setStatus('verified')
+      } else {
+        setStatus('invalid')
+      }
     } catch (err) {
       setStatus('error')
       setError(err instanceof Error ? err.message : 'Unknown error')
@@ -67,12 +90,12 @@ export function ProofVerifier() {
   return (
     <div>
       <label style={{ display: 'block', marginBottom: '6px', color: '#888', fontSize: '13px' }}>
-        Proof
+        Proof (paste the combined proof:publicInputs string)
       </label>
       <textarea
-        placeholder="0x..."
-        value={proof}
-        onChange={(e) => setProof(e.target.value)}
+        placeholder="0x...proof...:0x...input1,0x...input2,..."
+        value={proofInput}
+        onChange={(e) => setProofInput(e.target.value)}
         spellCheck={false}
         style={{
           width: '100%',
@@ -122,9 +145,22 @@ export function ProofVerifier() {
             {statusConfig[status].text}
           </span>
           {status === 'verified' && (
-            <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '13px' }}>
-              This address is managed by Fordefi
-            </p>
+            <div>
+              <p style={{ margin: '4px 0 0 0', color: '#666', fontSize: '13px' }}>
+                This address is managed by Fordefi
+              </p>
+              {recoveredAddress && (
+                <p style={{
+                  margin: '8px 0 0 0',
+                  color: '#fff',
+                  fontSize: '13px',
+                  fontFamily: 'monospace',
+                  wordBreak: 'break-all'
+                }}>
+                  Address: {recoveredAddress}
+                </p>
+              )}
+            </div>
           )}
           {error && (
             <p style={{ margin: '8px 0 0 0', color: '#888', fontSize: '13px' }}>
